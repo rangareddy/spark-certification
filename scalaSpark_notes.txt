@@ -1,0 +1,120 @@
+/// SPARK SHELL
+>>> cd ~/Downloads/spark-1.3.0-bin-hadoop2.4/bin
+>>> ./spark-shell
+ 
+ scala> val data = sc.objectFile[String]("/Users/kmanda1/Documents/code/spark_guide/Chapter2/object-example/")
+ ** if you dont specify [String] => java.lang.ArrayStoreException **
+ 
+ scala> data.first()
+ scala > data.filter(_.startsWith("1995")).count()
+ 
+ ** observe the nice DAG which magically performs the computation :
+ 
+ scala> data.filter(_.startsWith("1995")).toDebugString
+res9: String = 
+(2) MapPartitionsRDD[5] at filter at <console>:24 []
+ |  MapPartitionsRDD[3] at objectFile at <console>:21 []
+ |  /Users/kmanda1/Documents/code/spark_guide/Chapter2/object-example/ HadoopRDD[2] at objectFile at <console>:21 []
+ 
+ Lets convert rawdata into structured Entity :
+ case class Category(name: String)
+ case class Movie(id: Int, name: String, topics: List[Category])
+ 
+val movieSet = data.map(record => record.split("::")).map(columns => Movie(columns(0).toInt, columns(1), columns(2).split("\\|").map(Category(_)).toList))
+ 
+**** now movieSet.first() will return a Movie object !!!
+Movie = Movie(1,Toy Story (1995),List(Category(Adventure), Category(Animation), Category(Children), Category(Comedy), Category(Fantasy)))
+
+//// FIND TOP 10 TOPICS /////
+
+Now its much easier to query the Objects directly ===>
+
+val allTopics = movieSet.flatMap(movie => movie.topics)  => Extract the topics and store in a list ! 
+ 
+** now see the DAG for allTopics 
+** see even if alTopics get lost .. it can be recomputed easily
+scala> allTopics.toDebugString
+res30: String = 
+(2) MapPartitionsRDD[13] at flatMap at <console>:29 []// RDD after extracting topics
+ |  MapPartitionsRDD[12] at map at <console>:27 []    // RDD after mapping into Movie class
+ |  MapPartitionsRDD[11] at map at <console>:27 []    // RDD created after splitting tokens
+ |  MapPartitionsRDD[3] at objectFile at <console>:21 [] // RDD created from Hadoop
+ |  /Users/kmanda1/Documents/code/spark_guide/Chapter2/object-example/ HadoopRDD[2] at objectFile at <console>:21 []
+ 
+ // Now find topic count >>>  
+val topicCounts = allTopics.map({case (category) => (category.name,1)}).reduceByKey( _+_)
+ DAG :
+ (2) ShuffledRDD[21] at reduceByKey at <console>:31 []
+ +-(2) MapPartitionsRDD[20] at map at <console>:31 []
+    |  MapPartitionsRDD[13] at flatMap at <console>:29 []
+    |  MapPartitionsRDD[12] at map at <console>:27 []
+    |  MapPartitionsRDD[11] at map at <console>:27 []
+    |  MapPartitionsRDD[3] at objectFile at <console>:21 []
+    |  /Users/kmanda1/Documents/code/spark_guide/Chapter2/object-example/ HadoopRDD[2] at objectFile at <console>:21 []
+ 
+ ///
+ topicCounts.sortBy({case (category,count) => count}, ascending = false).first()
+ 
+ >>>>>>>>>
+ 
+ sc.broadcast(Array(1,2,3))
+ 
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+// SPARK JOIN
+ scala> val regFile = sc.textFile("/Users/kmanda1/Documents/code/spark_guide/Chapter2/join/reg.tsv")
+ scala> val register = regFile.map(_.split("\t"))
+ // similarly capture the data into an Entity
+ scala> case class Register(uuid: String, date: String, customerId: Int, lat: Double, long: Double)
+ val register = regFile.map(_.split("\t")).map(data => Register(data(1), data(0), data(2).toInt, data(3).toDouble, data(4).toDouble))
+ 
+ //-> now generate tuple -> (uuid, register_obj)
+ //-> similarly generate tuple -> (uuid, click_obj)
+ 
+ val register = regFile.map(_.split("\t")).map(data => Register(data(1), data(0), data(2).toInt, data(3).toDouble, data(4).toDouble)).map(reg => (reg.uuid, reg))
+ 
+ case class Click(uuid: String, date: String, pageId: Int)
+ val clickFile = sc.textFile("/Users/kmanda1/Documents/code/spark_guide/Chapter2/join/clk.tsv")
+ val click = clickFile.map(_.split("\t")).map(data => Click(data(1), data(0), data(2).toInt)).map(c => (c.uuid, c))
+ 
+ /////
+ 
+val joined = click.join(register)
+ 
+scala> joined.toDebugString
+res59: String = 
+(2) MapPartitionsRDD[73] at join at <console>:35 []
+ |  MapPartitionsRDD[72] at join at <console>:35 []
+ |  CoGroupedRDD[71] at join at <console>:35 []
+ +-(2) MapPartitionsRDD[70] at map at <console>:27 []
+ |  |  MapPartitionsRDD[69] at map at <console>:27 []
+ |  |  MapPartitionsRDD[68] at map at <console>:27 []
+ |  |  /Users/kmanda1/Documents/code/spark_guide/Chapter2/join/reg.tsv MapPartitionsRDD[57] at textFile at <console>:21 []
+ |  |  /Users/kmanda1/Documents/code/spark_guide/Chapter2/join/reg.tsv HadoopRDD[56] at textFile at <console>:21 []
+ +-(2) MapPartitionsRDD[67] at map at <console>:27 []
+    |  MapPartitionsRDD[66] at map at <console>:27 []
+    |  MapPartitionsRDD[65] at map at <console>:27 []
+    |  /Users/kmanda1/Documents/code/spark_guide/Chapter2/join/cl...
+    
+CoGroupedRDD >> generates (k , (k , Iterable(v)) , (k ,  Iterable(w)))
+MapPartitionsRDD >> flattens (k , Iterable(v))     
+MapPartitionsRDD >> flattens (k , Iterable(w))   
+
+///////
+
+More Examples :
+
+scala> val userInfo = sc.textFile("/Users/kmanda1/Documents/code/spark_guide/Chapter3/users.dat/")
+case class Users(id: Long, gender: String, age: Int, occupation: String, zipCode: String)
+
+scala> val users =  userInfo.map(line => line.split("::")).map(tokens => Users(tokens(0).toLong, tokens(1), tokens(2).toInt, tokens(3) , tokens(4)) )
+
+///
+ Note - result of action is a collection not RDD
+  >> val movie15 = data.filter(_.contains("15")).collect()  ==> results into ==> Array[Array[String]]
+ Note - only result of transformation is RDD
+ val movie15 = data.filter(_.contains("15"))
+  >> movie15: org.apache.spark.rdd.RDD[Array[String]] = MapPartitionsRDD[99] at filter
+  
+///
+   

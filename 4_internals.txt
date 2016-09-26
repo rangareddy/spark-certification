@@ -1,0 +1,163 @@
+localhost:4040/stages/
+
+>> A Spark program implicitly creates a logical directed acyclic graph (DAG) of operations. 
+When the driver runs, it converts this logical graph into a physical execution plan.
+>> Given a physical execution plan, a Spark driver must coordinate 
+>> the scheduling of individual tasks on executors.
+>> “pipelining” map transformations together to merge them, and 
+converts the execution graph into a set of stages. Each stage, in turn, consists of multiple tasks. 
+The tasks are bundled up and prepared to be sent to the cluster.
+
+>> Spark executors are worker processes responsible 
+for running the individual tasks in a given Spark job.
+ --> Executors have two roles. First, they run the tasks that make up the application 
+ and return results to the driver. Second, they provide in-memory storage for RDDs 
+ that are cached by user programs, 
+ through a service called the Block Manager that lives within each executor.....
+ 
+ >>>>>>>
+ 
+1. The user submits an application using spark-submit.
+2. spark-submit launches the driver program and invokes the main() method specified by the user.
+3. The driver program contacts the cluster manager to ask for resources to launch executors.
+4. The cluster manager launches executors on behalf of the driver program.
+5. The driver process runs through the user application. Based on the RDD actions and transformations in the program, 
+   the driver sends work to executors in the form of tasks.
+6. Tasks are run on executor processes to compute and save results.
+7. If the driver’s main() method exits or it calls SparkContext.stop(), it will terminate the executors and release resources from the cluster manager.
+ 
+ >>>>>>>>
+
+> Java serialization is flexible but often quite slow, and leads to large serialized formats for many classes.
+> Kryo is significantly faster and more compact than Java serialization (often as much as 10x), 
+but does not support all Serializable types and requires you to register the classes you’ll use in the program in advance for best performance.
+> conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+
+> If your objects are large, you may also need to increase the spark.kryoserializer.buffer
+
+> Use Kryo , if >> you want to cache data in serialized form >> objects are very large >> memory constraint 
+
+MEMORY ::
+
+> applications that do use caching can reserve a minimum storage space (R) where their data blocks are immune to being evicted. 
+> applications that do not use caching can use the entire space for execution, obviating unnecessary disk spills
+> prefer arrays of objects, and primitive types
+> http://fastutil.di.unimi.it/
+
+BROADCAST Vars ::
+
+Pros : loads only once in the worker node
+
+Cons : if cluster -> more than 40 worker nodes ... time to broadcast (if var size > 500 MB) will increase significantly ... 
+
+Ref : mosharaf-spark-bc-report-spring10.pdf
+
+> if you have less than 32 GB of RAM, set the JVM flag -XX:+UseCompressedOops
+
+> spark.memory.fraction expresses the size of M as a fraction of the (JVM heap space - 300MB) (default 0.75). 
+The rest of the space (25%) is reserved for user data structures, internal metadata in Spark, and safeguarding against OOM errors 
+
+///////
+
+Caching and Persistence
+
+rdd.cahce() ~~ rdd.persist(MEMORY_ONLY) - LRU Cache
+
+> Memory_Only persistence is not optimal as if cache doesn't fit into memory it will be recomputed 
+
+val data = sc.textFile("/Users/kmanda1/Documents/code/spark_guide/Chapter4/movielens/large/tags.dat").map(_.split("::"))
+val movie15 = data.filter(_.contains("15")).collect()
+
+scala> movie15.toDebugString
+res83: String = 
+(2) MapPartitionsRDD[99] at filter at <console>:24 []
+ |  MapPartitionsRDD[93] at map at <console>:21 []
+ |  /Users/kmanda1/Documents/code/spark_guide/Chapter4/movielens/large/tags.dat MapPartitionsRDD[92] at textFile at <console>:21 []
+ |  /Users/kmanda1/Documents/code/spark_guide/Chapter4/movielens/large/tags.dat HadoopRDD[91] at textFile at <console>:21 []
+
+
+
+now lets cache the movie15 - dataset
+movie15.cache() // => it wont change the original RDD
+
+Note -> Persistence Level is Set
+res86: String = 
+(2) MapPartitionsRDD[99] at filter at <console>:24 [Memory Deserialized 1x Replicated]
+ |  MapPartitionsRDD[93] at map at <console>:21 [Memory Deserialized 1x Replicated]
+ 
+/// import org.apache.spark.storage.StorageLevel
+now lets try to update StorageLevel
+
+scala> movie15.persist(StorageLevel.MEMORY_AND_DISK)
+java.lang.UnsupportedOperationException: Cannot change storage level of an RDD after it was already assigned a level
+
+///  Now if we reinitialize movie15 (reset cahce) , then StorageLevel is unset
+scala> val movie15 = data.filter(_.contains("15"))
+movie15: org.apache.spark.rdd.RDD[Array[String]] = MapPartitionsRDD[100] at filter at <console>:24
+
+scala> movie15.persist(StorageLevel.MEMORY_AND_DISK)    // WORKS FINE
+res88: movie15.type = MapPartitionsRDD[100] at filter at <console>:24
+
+scala> movie15.toDebugString
+res89: String = 
+(2) MapPartitionsRDD[100] at filter at <console>:24 [Disk Memory Deserialized 1x Replicated]
+ |  MapPartitionsRDD[93] at map at <console>:21 [Disk Memory Deserialized 1x Replicated]
+...  
+
+/////
+
+import org.apache.spark.storage.StorageLevel
+val result = input.map(x => x * x)
+result.persist(StorageLevel.DISK_ONLY)
+
+println(result.count())
+println(result.collect().mkString(","))
+Notice that we called persist() on the RDD before the first action. 
+The persist() call on its own doesn’t force evaluation.
+
+/// Creating Pairs
+
+pairs = lines.map(lambda x: (x.split(" ")[0], x))
+val pairs = lines.map(x => (x.split(" ")(0), x))
+
+PairFunction<String, String, String> keyData =
+  new PairFunction<String, String, String>() {
+  public Tuple2<String, String> call(String x) {
+    return new Tuple2(x.split(" ")[0], x);
+  }
+};
+JavaPairRDD<String, String> pairs = lines.mapToPair(keyData);
+
+///////
+
+Transformations on one pair RDD (example: {(1, 2), (3, 4), (3, 6)})
+
+rdd.reduceByKey( (x, y) => x + y)
+{(1, 2), (3, 10)}
+
+rdd.groupByKey()
+{(1, [2]), (3, [4, 6])}
+
+rdd.flatMapValues(x => (x to 5)
+{(1, 2), (1, 3), (1, 4), (1, 5), (3, 4), (3, 5)}
+
+rdd.mapValues(x => x+1)
+{(1, 3), (3, 5), (3, 7)}
+
+////
+
+Transformations on two pair RDDs 
+(rdd = {(1, 2), (3, 4), (3, 6)} 
+other = {(3, 9)})
+
+rdd.join(other)
+{(3, (4, 9)), (3, (6, 9))}
+
+rdd.leftOuterJoin(other)
+{(1,(2,None)), (3,(4,Some(9))), (3,(6,Some(9)))}
+
+rdd.cogroup(other)
+{(1,([2],[])), (3,([4, 6],[9]))}
+
+
+

@@ -1,0 +1,149 @@
+/////////
+
+What is Executor / Receiever ?
+>> one node dedicated for receiving streams
+
+>> Discretized Stream (discrete window)
+
+-- Storm needs programming (Topology) 
+
+Spark does not act on the -> flow of streams , -> but actually on the micro-batches 
+
+mandatory batch-time window
+
+>> Create a DStrea / Streaming Context
+>> Re-use existing RDD transformations
+>> statefu transformations
+>> window operations
+>> check points
+>> mashup
+
+import org.apache.spark.streaming.StreamingContext
+
+object SimpleStreaming extends App {
+
+def addLengthOfState(value: Seq(Int], state: Option[Int]) = {
+   Some(values.sum + state.getOrElse(0))
+}
+
+val sc = new SparkContext("local[2]", "Simple Streaming App")
+
+import org.apache.spark.streaming._
+
+val ssc = new StreamingContext(sc, Seconds(2))
+
+ssc.checkpoint("chkpnt_dir")
+
+val stream = ssc.socketTextStream("localhost",9999)
+
+stream
+	.map(sentence => (sentence, sentence.length))
+	.updateStateByKey(addLengthOfState)
+	.print()
+
+//stream.print()
+
+ssc.await()
+ssc.awiatTermination()
+
+}
+
+// Client
+nc -lk 9999
+hi there
+
+//////////////////
+/////////////////
+
+maintain the state across iterations / across all batches 
+// checkpoint directory - maintains states -> ensures nothing gets lost across iterations
+
+/// Share the checkpoit directory across all the Executors ...
+
+def createSparkStreamingContext() = {
+println("Creating a brand new Context")
+val sc = new SparkContext("local", "Simple Streaming App")
+val ssc = new StreamingContext(sc, Seconds(2))
+ssc.checkpoint("check")
+val stream = ssc.socketTextStream("localhost", 9999)
+stream.
+  map(line => (line, line.length))
+  .updateStateByKey(addLenghthToState)
+  .print
+ssc
+}
+
+val context = StreamingCOntext.getOrCreate("check",   createSparkStreamingContext)
+
+context.start()
+context.awaitTermination()
+
+}
+
+//////  STREAMING WORD COUNT every 2 SECS
+//////  --> every 2 sec a new 30 sec sliding window wiil be created ....
+
+val sc = new SparkContext("local", "Simple Streaming App")
+val ssc = new StreamingContext(sc, Seconds(2))  => batchsize of 2 secs
+ssc.checkpoint("check")
+val stream = ssc.socketTextStream("localhost", 9999)
+stream
+  .flatMap(_.split(""))
+  .map((_,1))
+  .reduceByKeyAndWindow(_+_, Seconds(30))
+  .print()
+  
+ssc.start()
+ssc.awaitTermination() 
+
+////////
+//// 
+
+def compute(input: RDD[String]) = 
+   input.flatMap(_.split(" ")
+        .map(_,1)
+        .reduceByKey(_+_)
+.....
+stream
+ .foreachRDD(rdd =>
+     compute(rdd)
+  )     
+..... OR
+stream   --> 30 secs window will be created every 2 secs  (min batch size)
+ .window(Seconds(30) , Seconds(10))  => should be multiple of min_batch_size
+ .transform(rdd => compute(rdd)) --> 
+ .print 
+...... 
+>> so here we can open a connection to a database from driver side 
+>> fetch data in transform operation and then broadcast to all executor nodes for actual computation 
+
+
+>>>>>>>>>
+
+databricks.gitbooks.io/databricks-spark-reference-applications/content/twitter_classifier/README.html
+
+////   STATELESS Transformations ....
+
+internally each DStream is composed of multiple RDDs (batches), 
+and each stateless transformation applies separately to each RDD. For example, 
+reduceByKey() 
+will reduce data within each time step, but not across time steps.  
+
+////  
+
+Finally, if these stateless transformations are insufficient, DStreams provide an advanced operator called transform() 
+that lets you operate directly on the RDDs inside them. The transform() operation 
+lets you provide any arbitrary RDD-to-RDD function to act on the DStream. 
+This function gets called on each batch of data in the stream to produce a new stream.
+ 
+A common application of transform() is to reuse batch processing code you had written on RDDs. 
+For example, if you had a function, extractOutliers(), that acted on an RDD of log lines to produce an RDD of outliers 
+(perhaps after running some statistics on the messages), you could reuse it within a transform(), 
+
+as shown in Examples 10-14 and 10-15.
+Example 10-14. transform() on a DStream in Scala
+
+
+val outlierDStream = accessLogsDStream.transform { rdd =>
+  extractOutliers(rdd)
+}  

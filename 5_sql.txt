@@ -1,0 +1,258 @@
+Dataframe - 'qry language' compiles down to RDDs
+
+Spark Python DF (bytecode) much performant than RDD Python
+
+SQL Query + DataFrame => Logical Plan + Catalog => Optimized Logical Plan => Physical Plans => Cost Model => Query Plan => RDD
+
+///
+import org.apache.spark.sql._
+val sqlCtx = new SQLContext(sc)
+val df = sqlCtx.createDataFrame(List(("RAM",1)))
+df.toDF("name","count")
+
+///
+import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.sql.DataFrame;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SQLContext;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StructType;
+
+case Class Author(name: String, nBooks: Int)
+
+object SQLMain extends App {
+
+  // infer schema from RDD
+  val sc = new SparkContext("local","App")
+  val sqlCtx = new SQLContext(sc)
+  val rdd = sc.parallelize(List(Author(),Author()))
+  import sqlCtx.implicits._
+  //val df = rdd.toDF("name","count")
+  val df = sqlCtx.createDataFrame(rdd, classOf(Author))
+  df.printSchema()
+  
+  // Now define Schema
+  val rdd: RDD[Row] = sc.parallelize(List((),())).map(case {name, count} => Row(name,count)}
+  
+  val schema = new StructType(new StructField("name", StringType), new StructField("value", IntegerType))
+  
+  val schema = org.apache.spark.sql.types.StructType = StructType(StructField(name,StringType,true), StructField(age,IntegerType,true))
+  
+  val df = sqlCtx.createDataFrame(rdd, schema)
+  
+  // register as temporary table
+  df.registerTempTable("authors")
+  
+  // now query
+  val authorsDF = sqlCtx.sql(""" |SELECT * FROM authors """.stripMargin)
+  // save
+  authorsDF.save("authors.parquet") / authorsDF.save("authors.json","json")
+  // load
+  val df2 = sqlCtx.load("authors.parquet") / 
+  df2.show()
+  df2.rdd.map(row => row.getInt())
+  
+  /// more examples
+  
+  
+  ////  Caching
+  
+  val path = "/Users/kmanda1/Documents/code/spark_guide/Chapter5/data_titanic.json/"
+  val df3 = sqlCtx.load(path, "json")
+  df3.printSchema()
+  df3.registerTempTable("passengers");
+  val stats = sqlCtx.sql("""
+   |SELECT sex,
+   |  (SUM(age) / count(*)) AS mean_age
+   |  , MIN(age) as youngest
+   |  , MAX(age) as oldest
+   | FROM passengers GROUP BY sex
+  """.stripMargin)
+  
+  // if we have a sql endpoint - if we have to expose a table , we can cahce it
+  sqlCtx.cacheTable("passengers")
+  // sqlCtx.uncacheTable(...)
+  
+  
+  // User Defined Function
+  sqlCtx.udf.register("suspects" , (input: String) => input.contains("Ab"))
+  
+  sqlCtx.sql("SELECT suspects(name) from passengers").show()
+  
+} 
+
+
+//////
+
+parquet - automatically preserves the schema and one can deserialize only whatever is required 
+
+Replace Java Map Reduce with SQL DataFrame
+
+sqlCtx.table("people")
+	.groupBy("name")
+	.agg("name", avg("age"))
+	.collect()
+	
+df = sqlCtx.load(/...)
+df.filter(df.authorName == "...").count()
+
+//// Calling UDF
+from pyspark.sql.functions import *
+import re
+
+get_domain = udf(lambda x: re.search("@((^@)*)" , x + "@" ).group(1)
+
+df.select(get_domain(df.commiterName).alias("domain"))
+  .groupBy("domain").count().orderBy(desc("count")).take(5)
+  
+  ////
+	
+	Big Data Processing
+	>> skip data i.e. select only required columns fro Parquet format
+	>> use partitioning  /year=2014/month=08
+	>> skip data using stats (min , max)
+	>> push down sql predicates to the target datastore (redshift etc.) instead of running on spark
+	
+// BlinkDB - 
+SQL approximation 
+2 secs ... 17 TB with error rate 2-10 %
+
+tachyon - off-heap memory based distributed data distribution	
+
+//////////////////////
+import org.apache.spark.sql.SQLContext;
+import sqlContext._
+case class Person(name: String, age: Int)
+
+val personData = sc.textFile("/Users/kmanda1/Documents/code/spark/spark-training/spark/examples/src/main/resources/people.txt")
+
+val personObjs = personData.map(_.split(",")).map(p => Person(p(0), p(1).trim.toInt))
+
+#val schema =  StructType( StructField("name", StringType, nullable=false),  StructField("age", IntegerType, nullable = false))
+  
+val sqlCtx = new SQLContext(sc) 
+  
+val peopleDF = sqlCtx.createDataFrame(personObjs)
+  
+peopleDF.registerTempTable("people")
+
+val teenagers = sqlCtx.sql("select name , age from people where age > 13 and age < 19")
+
+teenagers.collect().foreach(println)
+
+/////
+
+peopleDF.saveAsParquetFile("people.parquet");
+
+val parquetFile = sqlCtx.parquetFile("people.parquet");
+parquetFile.registerTempTable("personsPQ")
+val teenagers = sqlCtx.sql("select name , age from personsPQ where age > 13 and age < 19")
+teenagers.collect().foreach(println)
+
+IMP ->   val folks = peopleDF.where('age >= 13).where('age <= 19).select('name)
+
+//////
+
+Python
+
+from pyspark.sql import SQLContext, Row
+sqlCtx = SQLContext(sc)
+
+lines = sc.textFile("/Users/kmanda1/Documents/code/spark/spark-training/spark/examples/src/main/resources/people.txt")
+personData = lines.map(lambda l : l.split(","))
+people = personData.map(lambda p: Row(name=p[0], age=int(p[1]) ))
+
+peopleTable = sqlCtx.inferSchema(people)
+peopleTable.registerTempTable("people")
+sqlResult = sqlCtx.sql("select * from people where age > 20")
+adults = sqlResult.map(lambda a: "Name :" + a.name)
+adults.collect()
+
+//// HIVE 
+import org.apache.spark.sql.hive.HiveContext;
+
+val hc = new HiveContext(sc)
+import hc._
+hc.hql("create table if not exists src (key INT, val STRING)")
+hql("load data local inpath  "/Users/kmanda1/Documents/code/spark/spark-training/spark/examples/src/main/resources/kv1.txt" into table src")
+hql("from src select key, value").collect().foreach(println)
+
+/////
+
+Example 5-30. Creating a HiveContext and selecting data in Python
+from pyspark.sql import HiveContext
+
+hiveCtx = HiveContext(sc)
+rows = hiveCtx.sql("SELECT name, age FROM users")
+firstRow = rows.first()
+print firstRow.name
+
+Example 5-31. Creating a HiveContext and selecting data in Scala
+import org.apache.spark.sql.hive.HiveContext
+
+val hiveCtx = new HiveContext(sc)
+val rows = hiveCtx.sql("SELECT name, age FROM users")
+val firstRow = rows.first()
+println(firstRow.getString(0)) // Field 0 is the name
+
+Example 5-32. Creating a HiveContext and selecting data in Java
+
+import org.apache.spark.sql.hive.HiveContext;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SchemaRDD;
+
+HiveContext hiveCtx = new HiveContext(sc);
+SchemaRDD rows = hiveCtx.sql("SELECT name, age FROM users");
+Row firstRow = rows.first();
+System.out.println(firstRow.getString(0)); // Field 0 is the name
+
+We cover loading data from Hive in more detail in “Apache Hive”.
+JSON
+If you have JSON data with a consistent schema across records, Spark SQL can infer their schema and load this data as rows as well, making it very simple to pull out the fields you need. To load JSON data, first create a HiveContext as when using Hive. (No installation of Hive is needed in this case, though—that is, you don’t need a hive-site.xml file.) Then use the HiveContext.jsonFile method to get an RDD of Row objects for the whole file. Apart from using the whole Row object, you can also register this RDD as a table and select specific fields from it. For example, suppose that we had a JSON file containing tweets in the format shown in Example 5-33, one per line.
+Example 5-33. Sample tweets in JSON
+{"user": {"name": "Holden", "location": "San Francisco"}, "text": "Nice day out today"}
+{"user": {"name": "Matei", "location": "Berkeley"}, "text": "Even nicer here :)"}
+
+We could load this data and select just the username and text fields as shown in Examples 5-34 through 5-36.
+
+Example 5-34. JSON loading with Spark SQL in Python
+tweets = hiveCtx.jsonFile("tweets.json")
+tweets.registerTempTable("tweets")
+results = hiveCtx.sql("SELECT user.name, text FROM tweets")
+
+Example 5-35. JSON loading with Spark SQL in Scala
+val tweets = hiveCtx.jsonFile("tweets.json")
+tweets.registerTempTable("tweets")
+val results = hiveCtx.sql("SELECT user.name, text FROM tweets")
+
+Example 5-36. JSON loading with Spark SQL in Java
+SchemaRDD tweets = hiveCtx.jsonFile(jsonFile);
+tweets.registerTempTable("tweets");
+SchemaRDD results = hiveCtx.sql("SELECT user.name, text FROM tweets");
+
+//////
+>> Python string length UDF
+# Import the IntegerType we are returning
+from pyspark.sql.types import IntegerType
+# Make a UDF to tell us how long some text is
+hiveCtx.registerFunction("strLenPython", lambda x: len(x), IntegerType())
+lengthDataFrame = hiveCtx.sql("SELECT strLenPython('text') FROM tweets LIMIT 10")
+
+>> Scala 
+hiveCtx.udf.register("strLenScala", (_: String).length)
+val tweetLength = hiveCtx.sql("SELECT strLenScala('tweet') FROM tweets LIMIT 10")
+
+
+
+/////
+
+SELECT SUM(user.favouritesCount), SUM(retweetCount), user.id FROM tweets
+  GROUP BY user.id
+
+Spark SQL is able to use the knowledge of types to more efficiently represent our data. 
+When caching data, Spark SQL uses an in-memory columnar storage. 
+This not only takes up less space when cached, 
+but if our subsequent queries depend only on subsets of the data, 
+Spark SQL minimizes the data read.

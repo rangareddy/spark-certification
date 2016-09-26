@@ -1,0 +1,6 @@
+Lazy collections avoid immediate result 
+>> Overhead : every operation is a separate closure 
+Kay Ousterhout : Making Sense of Spark performance
+
+Spark solved this problem - using DataFrame which looks into closures.
+

@@ -1,0 +1,68 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1265\cocoasubrtf190
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+\margl1440\margr1440\vieww10800\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural
+
+\f0\fs24 \cf0 // GraphX -> Scalable Graph Manipulation\
+// Not for Storage\
+\
+Page Rank , Connected Components\
+\
+Triplets =:  source ->Edge -> Destn\
+\
+import org.apache.spark.graphx.\{Graph, Edge\}\
+\
+object GraphXSimpleQuery extends App \{\
+\
+val sc = new SparkContext("local", "GraphX App")\
+\
+val vertices = sc.parallelize(Array(\
+(1L, "John"),\
+(2L, "Maria"),\
+(3L, "Patrick"),\
+(4L, "Maurice")\
+))\
+\
+val edges = sc.parallelize(Array(\
+Edge(1L, 2L, "loves"),\
+Edge(1L, 3L, "hates"),\
+Edge(2L, 3L,"loves"),\
+Edge(4L, 2L, "loves")\
+))\
+\
+val graph = graph(vertices, edges)\
+\
+graph.triplets.map \{\
+	triplet => s"$\{triplet.srcAttr\} $\{triplet.attr\} $\{triplet.dstAttr\}"\
+\}.foreach \{println\}\
+\
+graph.subgraph(epred=(triplet) => triplet.attr == "loves")\
+.triplets.map \{\
+	triplet => s"$\{triplet.srcAttr\} $\{triplet.attr\} $\{triplet.dstAttr\}"\
+\}.foreach \{println\}\
+\
+// filtering on edges\
+\
+val loveEdges = graph.edges.filter(_.attr == "loves").count()\
+\
+println(s"$loveEdges love")\
+\
+/// GRAPH LOADER\
+\
+val edgesListPath = "/Users/kmanda1/Documents/code/spark_guide/Chapter7/edges.data/"\
+val graph: Graph[Int, Int] = GraphLoader.edgeListFile(sc, edgesListPath)\
+\
+// GRAPH ALGO\
+graph.pageRank(0.0001).triplets.map \{\
+	triplet => s"$\{triplet.srcAttr\} $\{triplet.attr\} $\{triplet.dstAttr\}"\
+\}.foreach \{println\}  // Iterable\
+\
+\}\
+\
+///\
+\
+import org.apache.spark.graphx._\
+import org.apache.spark.rdd.RDD\
+\
+}

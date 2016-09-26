@@ -1,0 +1,60 @@
+https://github.com/fluxcapacitor/pipeline/wiki
+
+https://hub.docker.com/r/fluxcapacitor/pipeline/
+
+github student account / ibm bluemix cloud account
+
+https://livestream.com/sparktc
+
+http://www.slideshare.net/cfregly
+
+Spark is designed to cover a wide range of workloads that previously required separate distributed systems, 
+including batch applications, iterative algorithms, interactive queries, and streaming. 
+By supporting these workloads in the same engine, 
+
+//////
+
+./sbt/sbt assembly OR mvn package cd $SPARK_HOME; 
+./bin/spark-submit --class com.oreilly.learningsparkexamples.[lang].[example] ../learning-spark-examples/target/scala-2.10/learning-spark-examples-assembly-0.0.1.jar
+
+/////
+
+Example 3-5. parallelize() method in Python
+lines = sc.parallelize(["pandas", "i like pandas"])
+Example 3-6. parallelize() method in Scala
+val lines = sc.parallelize(List("pandas", "i like pandas"))
+Example 3-7. parallelize() method in Java
+JavaRDD<String> lines = sc.parallelize(Arrays.asList("pandas", "i like pandas"));
+
+////
+lines = lines.filter(lambda l: {"python" in l or "scala" in l})
+
+for line in lines.take(10):
+	print line
+////
+
+Scala -> 
+lines.take(10).foreach(println)	
+
+////
+
+JavaDoubleRDD result = rdd.mapToDouble(
+  new DoubleFunction<Integer>() {
+    public double call(Integer x) {
+      return (double) x * x;
+    }
+});
+System.out.println(result.mean());
+
+/////
+
+Basic actions on an RDD containing {1, 2, 3, 3}
+
+fold(zero)(func)
+Same as reduce() but with the provided zero value.
+rdd.fold(0)((x, y) => x + y)
+9
+
+/////////
+
+

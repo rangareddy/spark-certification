@@ -1,0 +1,19 @@
+./sbin/start-slave.sh first spark://MacBook-Pro-kaniska.local:7077
+
+./sbin/start-slave.sh second spark://MacBook-Pro-kaniska.local:7077
+
+./sbin/start-submit --master spark://MacBook-Pro-kaniska.local:6066 
+--class SimpleStreaming spark-scala-test-assembly-1.0.jar
+
+./sbin/start-submit --master spark://MacBook-Pro-kaniska.local:6066 
+--deploy-mode cluster
+--class SimpleStreaming spark-scala-test-assembly-1.0.jar
+
+check macbook-pro-kaniska.local:8080
+
+//// mesos - can scale under reverse-proxy / web app
+/// yarn - hadoop scale 
+
+One advantage of Mesos over both YARN and Standalone mode is its fine-grained sharing option, 
+which lets interactive applications such as the Spark shell scale down their CPU allocation between commands. 
+This makes it attractive in environments where multiple users are running interactive shells.

@@ -1,0 +1,30 @@
+Spark automatically deals with failed or slow machines by re-executing failed or slow tasks. 
+For example, if the node running a partition of a map() operation crashes, 
+Spark will rerun it on another node; and even if the node does not crash 
+but is simply much slower than other nodes, 
+
+Spark can preemptively launch a “speculative” copy of the task on another node, 
+and take its result if that finishes. Even if no nodes fail, 
+
+Spark may have to rerun a task to rebuild a cached value that falls out of memory. 
+The net result is therefore that the same function may run multiple times on the same data 
+depending on what happens on the cluster.
+
+//////
+
+Setting up a driver that can recover from failure in Scala
+def createStreamingContext() = {
+  ...
+  val sc = new SparkContext(conf)
+  // Create a StreamingContext with a 1 second batch size
+  val ssc = new StreamingContext(sc, Seconds(1))
+  ssc.checkpoint(checkpointDir)
+}
+...
+val ssc = StreamingContext.getOrCreate(checkpointDir, createStreamingContext _)
+
+/// Supervise Mode :
+
+./bin/spark-submit --deploy-mode cluster --supervise --master spark://... App.jar
+When using this option, you will also want the Spark Standalone master 
+to be fault-tolerant. You can configure this using ZooKeeper

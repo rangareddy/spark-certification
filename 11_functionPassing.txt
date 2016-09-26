@@ -1,0 +1,114 @@
+Passing Functions to Spark
+Most of Spark’s transformations, and some of its actions, depend on passing in functions that are used by Spark to compute data. 
+Each of the core languages has a slightly different mechanism for passing functions to Spark.
+Python
+In Python, we have three options for passing functions into Spark. 
+For shorter functions, we can pass in lambda expressions. 
+Alternatively, we can pass in top-level functions, or locally defined functions.
+
+Example 3-18. Passing functions in Python
+word = rdd.filter(lambda s: "error" in s)
+def containsError(s):
+    return "error" in s
+word = rdd.filter(containsError)
+
+/////
+
+
+One issue to watch out for when passing functions is inadvertently serializing the object containing the function. 
+When you pass a function that is the member of an object, or contains references to fields in an object (e.g., self.field), 
+Spark sends the entire object to worker nodes, which can be much larger than the bit of information you need (see Example 3-19). 
+Sometimes this can also cause your program to fail, if your class contains objects that Python can’t figure out how to pickle.
+
+Example 3-19. Passing a function with field references (don’t do this!)
+class SearchFunctions(object):
+  def __init__(self, query):
+      self.query = query
+  def isMatch(self, s):
+      return self.query in s
+  def getMatchesFunctionReference(self, rdd):
+      # Problem: references all of "self" in "self.isMatch"
+      return rdd.filter(self.isMatch)
+  def getMatchesMemberReference(self, rdd):
+      # Problem: references all of "self" in "self.query"
+      return rdd.filter(lambda x: self.query in x)
+Instead, just extract the fields you need from your object into a local variable and pass that in, like we do in Example 3-20.
+Example 3-20. Python function passing without field references
+class WordFunctions(object):
+  ...
+  def getMatchesNoReference(self, rdd):
+      # Safe: extract only the field we need into a local variable
+      query = self.query
+      return rdd.filter(lambda x: query in x)
+Scala
+In Scala, we can pass in functions defined inline, references to methods, or static functions as we do for Scala’s other functional APIs. 
+Some other considerations come into play, though—namely that the function we pass and the data referenced in it needs to be serializable (implementing Java’s Serializable interface). 
+Furthermore, as in Python, passing a method or field of an object includes a reference to that whole object, 
+though this is less obvious because we are not forced to write these references with self. 
+
+As we did with Python in Example 3-20, we can instead extract the fields we need as local variables and avoid needing to pass the whole object containing them, as shown in Example 3-21.
+
+Example 3-21. Scala function passing
+class SearchFunctions(val query: String) {
+  def isMatch(s: String): Boolean = {
+    s.contains(query)
+  }
+  def getMatchesFunctionReference(rdd: RDD[String]): RDD[Boolean] = {
+    // Problem: "isMatch" means "this.isMatch", so we pass all of "this"
+    rdd.map(isMatch)
+  }
+  def getMatchesFieldReference(rdd: RDD[String]): RDD[Array[String]] = {
+    // Problem: "query" means "this.query", so we pass all of "this"
+    rdd.map(x => x.split(query))
+  }
+  def getMatchesNoReference(rdd: RDD[String]): RDD[Array[String]] = {
+    // Safe: extract just the field we need into a local variable
+    val query_ = this.query
+    rdd.map(x => x.split(query_))
+  }
+}
+If NotSerializableException occurs in Scala, a reference to a method or field in a nonserializable class is usually the problem. 
+Note that passing in local serializable variables or functions that are members of a top-level object is always safe.
+
+Java >>
+In Java, functions are specified as objects that implement one of Spark’s function interfaces from the org.apache.spark.api.java.function package. There are a number of different interfaces based on the return type of the function. We show the most basic function interfaces in Table 3-1, and cover a number of other function interfaces for when we need to return special types of data, like key/value data, in “Java”.
+Table 3-1. Standard Java function interfaces
+Function name	Method to implement	Usage
+
+Function<T, R>
+R call(T)
+Take in one input and return one output, for use with operations like map() and filter().
+Function2<T1, T2, R>
+R call(T1, T2)
+Take in two inputs and return one output, for use with operations like aggregate() or fold().
+FlatMapFunction<T, R>
+Iterable<R> call(T)
+Take in one input and return zero or more outputs, for use with operations like flatMap().
+We can either define our function classes inline as anonymous inner classes (Example 3-22), or create a named class (Example 3-23).
+
+Example 3-22. Java function passing with anonymous inner class
+RDD<String> errors = lines.filter(new Function<String, Boolean>() {
+  public Boolean call(String x) { return x.contains("error"); }
+});
+Example 3-23. Java function passing with named class
+class ContainsError implements Function<String, Boolean>() {
+  public Boolean call(String x) { return x.contains("error"); }
+}
+
+RDD<String> errors = lines.filter(new ContainsError());
+The style to choose is a personal preference, but we find that top-level named functions are often cleaner for organizing large programs. 
+One other benefit of top-level functions is that you can give them constructor parameters, as shown in Example 3-24.
+Example 3-24. Java function class with parameters
+class Contains implements Function<String, Boolean>() {
+  private String query;
+  public Contains(String query) { this.query = query; }
+  public Boolean call(String x) { return x.contains(query); }
+}
+
+RDD<String> errors = lines.filter(new Contains("error"));
+In Java 8, you can also use lambda expressions to concisely implement the function interfaces. 
+Since Java 8 is still relatively new as of this writing, our examples use the more verbose syntax for defining classes in previous versions of Java.
+However, with lambda expressions, our search example would look like Example 3-25.
+
+Example 3-25. Java function passing with lambda expression in Java 8
+RDD<String> errors = lines.filter(s -> s.contains("error"));
