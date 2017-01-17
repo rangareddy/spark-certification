@@ -11,7 +11,7 @@ Spark does not act on the -> flow of streams , -> but actually on the micro-batc
 
 mandatory batch-time window
 
->> Create a DStrea / Streaming Context
+>> Create a DStream / Streaming Context
 >> Re-use existing RDD transformations
 >> statefu transformations
 >> window operations
