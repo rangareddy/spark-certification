@@ -102,7 +102,7 @@ ${SPARK_HOME}/bin/spark-submit \
   val count = rdd.count() 
   .....
   val outputRDD = rdd.repartition(partitionsEachInterval)
-  outputRDD.saveAsTextFile(	 
+  outputRDD.saveAsTextFile(..)
 	 
 >> 
 
